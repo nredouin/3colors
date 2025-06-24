@@ -3,30 +3,23 @@ import pandas as pd
 import plotly.graph_objects as go
 import plotly.express as px
 import numpy as np
+import luxpy as lx
 from config.settings import logger
 
-def lab_to_rgb(L, a, b):
-    """
-    Convert LAB color to RGB (simplified conversion)
+def lab_to_rgb(lab_values):
+    """Convert Lab values to RGB values (0-255 range) using luxpy."""
+    lab_array = np.array(lab_values).reshape(1, 3)
     
-    Args:
-        L, a, b: LAB color values
-        
-    Returns:
-        tuple: RGB values (0-255)
-    """
-    # Simplified LAB to RGB conversion
-    # This is a basic approximation - you might want to use a proper color library
+    # Convert Lab to XYZ
+    xyz_array = lx.lab_to_xyz(lab_array)
     
-    # Normalize L (0-100 to 0-1)
-    L_norm = L / 100.0
+    # Convert XYZ to sRGB - this already returns values in 0-255 range
+    rgb_array = lx.xyz_to_srgb(xyz_array)
     
-    # Simple conversion (not accurate, but for visualization)
-    r = max(0, min(255, int(255 * (L_norm + a/100))))
-    g = max(0, min(255, int(255 * (L_norm - a/200 + b/200))))
-    b_val = max(0, min(255, int(255 * (L_norm - b/100))))
+    # Clip values to valid range and convert to integers
+    rgb_255 = np.clip(rgb_array.flatten(), 0, 255).astype(np.uint8)
     
-    return (r, g, b_val)
+    return rgb_255
 
 def create_color_bars(df: pd.DataFrame) -> go.Figure:
     """
@@ -50,7 +43,7 @@ def create_color_bars(df: pd.DataFrame) -> go.Figure:
     
     fig = go.Figure()
     
-    # L'Oréal color palette
+    # L'Oréal color palette as fallback
     loreal_colors = ['#2649B2', '#4A74F3', '#8E7DE3', '#9D5CE6', '#D4D9F0', '#6C8BE0', '#B55CE6']
     
     for idx, row in df.iterrows():
@@ -62,9 +55,15 @@ def create_color_bars(df: pd.DataFrame) -> go.Figure:
             b = row[f'b_{i}']
             proportion = row[f'proportion_{i}']
             
-            # Convert LAB to RGB for display
-            r, g, b_val = lab_to_rgb(L, a, b)
-            rgb_color = f'rgb({r}, {g}, {b_val})'
+            # Convert LAB to RGB using luxpy for accurate colors
+            try:
+                lab_values = [L, a, b]
+                rgb_values = lab_to_rgb(lab_values)
+                rgb_color = f'rgb({rgb_values[0]}, {rgb_values[1]}, {rgb_values[2]})'
+            except Exception as e:
+                logger.warning(f"Error converting LAB to RGB for sample {idx}, cluster {i}: {e}")
+                # Fallback to L'Oréal palette color
+                rgb_color = loreal_colors[i-1] if i-1 < len(loreal_colors) else '#CCCCCC'
             
             colors_data.append({
                 'color': rgb_color,
@@ -100,16 +99,16 @@ def create_color_bars(df: pd.DataFrame) -> go.Figure:
         xaxis_title="Proportion (%)",
         yaxis_title="Samples",
         barmode='stack',
-        height=400,  # Vous pouvez aussi augmenter la hauteur pour plus d'espace
+        height=800,
         font=dict(family="Arial", size=12),
         plot_bgcolor='white',
         paper_bgcolor='white',
-        bargap=0.1,  # 🔥 Barres très épaisses
-        bargroupgap=0.05,  # Espace minimal entre groupes
-        margin=dict(l=80, r=80, t=80, b=80)  # Marges pour plus d'espace
+        bargap=0.1,  # Thick bars as requested
+        bargroupgap=0.05,
+        margin=dict(l=80, r=80, t=80, b=80)
     )
     
-    # Correction: utiliser update_xaxes et update_yaxes (avec 's')
+    # Add grid
     fig.update_xaxes(gridcolor='lightgray')
     fig.update_yaxes(gridcolor='lightgray')
     

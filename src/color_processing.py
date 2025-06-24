@@ -2,27 +2,23 @@
 import numpy as np
 import pandas as pd
 from PIL import Image
+import luxpy as lx
 from config.settings import logger
 
-def lab_to_rgb(L, a, b):
-    """
-    Convert LAB color to RGB
+def lab_to_rgb(lab_values):
+    """Convert Lab values to RGB values (0-255 range) using luxpy."""
+    lab_array = np.array(lab_values).reshape(1, 3)
     
-    Args:
-        L, a, b: LAB color values
-        
-    Returns:
-        tuple: RGB values (0-255)
-    """
-    # Simplified LAB to RGB conversion
-    L_norm = L / 100.0
+    # Convert Lab to XYZ
+    xyz_array = lx.lab_to_xyz(lab_array)
     
-    # Basic conversion (you might want to use colorspacious or similar for accuracy)
-    r = max(0, min(255, int(255 * (L_norm + a/128))))
-    g = max(0, min(255, int(255 * (L_norm - a/256 + b/256))))
-    b_val = max(0, min(255, int(255 * (L_norm - b/128))))
+    # Convert XYZ to sRGB - this already returns values in 0-255 range
+    rgb_array = lx.xyz_to_srgb(xyz_array)
     
-    return (r, g, b_val)
+    # Clip values to valid range and convert to integers
+    rgb_255 = np.clip(rgb_array.flatten(), 0, 255).astype(np.uint8)
+    
+    return rgb_255
 
 def select_balanced_samples(df: pd.DataFrame, n_clusters: int = 3) -> pd.DataFrame:
     """
@@ -51,7 +47,10 @@ def select_balanced_samples(df: pd.DataFrame, n_clusters: int = 3) -> pd.DataFra
             best_score = score
             best_row = row
     
-    logger.info(f"Selected sample with balance score: {best_score:.2f}")
+    if best_row is not None:
+        proportions = [best_row[f'proportion_{i+1}'] for i in range(n_clusters)]
+        logger.info(f"Selected sample with balance score: {best_score:.2f}, proportions: {proportions}")
+    
     return best_row
 
 def find_closest_color(pixel_rgb, cluster_centers):
@@ -100,18 +99,19 @@ def remap_hair_colors(image: Image.Image, mask: Image.Image, color_data: pd.Seri
         # Create mask for non-black pixels (hair areas)
         non_black_mask = (mask_np != [0, 0, 0]).all(axis=2)
         
-        # Extract cluster centers from LAB data and convert to RGB
+        # Extract cluster centers from LAB data and convert to RGB using luxpy
         cluster_centers = []
         for i in range(n_clusters):
             L = color_data[f'L_{i+1}']
             a = color_data[f'a_{i+1}']
             b = color_data[f'b_{i+1}']
             
-            # Convert LAB to RGB
-            r, g, b_val = lab_to_rgb(L, a, b)
-            cluster_centers.append([r, g, b_val])
+            # Convert LAB to RGB using luxpy
+            lab_values = [L, a, b]
+            rgb_values = lab_to_rgb(lab_values)
+            cluster_centers.append(rgb_values)
             
-            logger.info(f"Cluster {i+1}: LAB({L:.1f}, {a:.1f}, {b:.1f}) -> RGB({r}, {g}, {b_val})")
+            logger.info(f"Cluster {i+1}: LAB({L:.1f}, {a:.1f}, {b:.1f}) -> RGB({rgb_values[0]}, {rgb_values[1]}, {rgb_values[2]})")
         
         cluster_centers = np.array(cluster_centers).astype(int)
         
@@ -119,13 +119,15 @@ def remap_hair_colors(image: Image.Image, mask: Image.Image, color_data: pd.Seri
         indices = np.where(non_black_mask)
         total_pixels = len(indices[0])
         
+        logger.info(f"Starting color remapping for {total_pixels} hair pixels...")
+        
         for i, (y, x) in enumerate(zip(indices[0], indices[1])):
             original_rgb = image_np[y, x]
             closest_rgb = find_closest_color(original_rgb, cluster_centers)
             image_np[y, x] = closest_rgb
             
             # Log progress for large images
-            if i % 10000 == 0 and i > 0:
+            if i % 20000 == 0 and i > 0:
                 logger.info(f"Processed {i}/{total_pixels} pixels ({100*i/total_pixels:.1f}%)")
         
         # Create remapped image
@@ -160,6 +162,9 @@ def process_hair_color_remapping(image: Image.Image, mask: Image.Image, df: pd.D
     if selected_sample is None:
         logger.warning("No suitable sample found for remapping")
         return image
+    
+    # Log selected sample info
+    logger.info(f"Selected sample: {selected_sample['filename'] if 'filename' in selected_sample else 'Unknown'}")
     
     # Perform color remapping
     remapped_image = remap_hair_colors(image, mask, selected_sample, n_clusters=3)
