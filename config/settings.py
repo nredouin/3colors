@@ -35,3 +35,10 @@ NB_VCPU = multiprocessing.cpu_count()
 
 # CSV path template
 CSV_PATH_TEMPLATE = "{city_folder}/processed/results/color_extraction3/{id}.csv"
+
+# Swatches configuration
+SWATCHES_BASE_PATH = "mcb_hair_bucket_atlanta/swatches"
+SWATCH_FOLDERS = ["dark", "medium", "light"]  # Search order
+
+# Shades mapping CSV path (LOCAL FILE)
+SHADES_MAPPING_CSV_PATH = "data/shades_mapping.csv"  # Local path - update as needed

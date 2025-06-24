@@ -11,6 +11,10 @@ from src.data_loader import (
 )
 from src.color_viz import create_color_bars
 from src.color_processing import process_hair_color_remapping
+from src.swatch_loader import (
+    load_swatch_for_shade, extract_shade_id_from_data, 
+    get_mapping_info, reload_shades_mapping
+)
 from config.settings import logger, CITY_FOLDERS
 
 # Page configuration
@@ -44,6 +48,13 @@ st.markdown("""
         border-radius: 10px;
         padding: 10px;
         background-color: #f8f4ff;
+    }
+    .swatch-container {
+        border: 2px solid #4A74F3;
+        border-radius: 10px;
+        padding: 15px;
+        background-color: #f0f4ff;
+        margin-top: 1rem;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -92,6 +103,24 @@ with st.sidebar:
     else:
         st.warning("Please enter a 4-digit respondent ID")
         selected_shade = None
+    
+    # Debug section for mapping
+    st.divider()
+    st.subheader("Debug Info")
+    if st.button("Check Mapping File"):
+        mapping_info = get_mapping_info()
+        if mapping_info['file_exists']:
+            st.success(f"✅ Mapping file found ({mapping_info['total_entries']} entries)")
+            if mapping_info['sample_entries']:
+                st.write("Sample entries:")
+                for entry in mapping_info['sample_entries']:
+                    st.write(f"• {entry['id']} → {entry['name']}")
+        else:
+            st.error(f"❌ Mapping file not found at: {mapping_info['file_path']}")
+    
+    if st.button("Reload Mapping"):
+        reload_shades_mapping()
+        st.success("Mapping reloaded!")
 
 # Main content
 if respondent_id and selected_shade:
@@ -181,9 +210,48 @@ if respondent_id and selected_shade:
             else:
                 st.warning("Original image required for remapping")
         
-        # Detailed data table (full width)
+        # Detailed data table and swatch (full width)
         with st.expander("View Detailed Color Data"):
             st.dataframe(df, use_container_width=True)
+            
+            # Load and display swatch
+            st.subheader("Color Swatch Reference")
+            
+            with st.spinner("Loading color swatch..."):
+                # Extract shade ID from data
+                shade_id = extract_shade_id_from_data(df)
+                
+                if shade_id:
+                    st.info(f"Looking for swatch with shade ID: **{shade_id}**")
+                    
+                    swatch_image, swatch_info = load_swatch_for_shade(shade_id)
+                    
+                    if swatch_image and swatch_info:
+                        col_swatch1, col_swatch2 = st.columns([1, 2])
+                        
+                        with col_swatch1:
+                            st.markdown('<div class="swatch-container">', unsafe_allow_html=True)
+                            st.image(
+                                swatch_image,
+                                caption=f"Swatch: {swatch_info['name']}",
+                                width=200
+                            )
+                            st.markdown('</div>', unsafe_allow_html=True)
+                        
+                        with col_swatch2:
+                            st.write("**Swatch Information:**")
+                            st.write(f"**Name:** {swatch_info['name']}")
+                            st.write(f"**Filename:** {swatch_info['filename']}")
+                            st.write(f"**Category:** {swatch_info['folder'].title()}")
+                            st.write(f"**Path:** `{swatch_info['path']}`")
+                            
+                    else:
+                        st.warning(f"No swatch found for shade ID: {shade_id}")
+                        st.info("Searched in folders: dark → medium → light")
+                else:
+                    st.warning("Could not extract shade ID from data for swatch lookup")
+                    st.info("Available columns in data:")
+                    st.write(df.columns.tolist())
             
     else:
         st.error(f"No data found for Respondent {respondent_id} with shade '{selected_shade}'")

@@ -89,6 +89,38 @@ def get_mask_from_gcs(blob_path: str) -> Image.Image:
         logger.error(f"Error loading mask from {blob_path}: {str(e)}")
         return None
 
+def find_swatch_in_folders(swatch_name_prefix: str, folders: list) -> tuple:
+    """
+    Find swatch image in the specified folders (dark, medium, light)
+    
+    Args:
+        swatch_name_prefix (str): Prefix of the swatch filename
+        folders (list): List of folder paths to search in
+        
+    Returns:
+        tuple: (PIL.Image, found_path) or (None, None) if not found
+    """
+    from config.settings import SWATCHES_BASE_PATH
+    
+    for folder in folders:
+        folder_path = f"{SWATCHES_BASE_PATH}/{folder}"
+        swatch_filename = f"{swatch_name_prefix}.png"
+        swatch_path = f"{folder_path}/{swatch_filename}"
+        
+        try:
+            blob = bucket.blob(swatch_path)
+            if blob.exists():
+                image_bytes = blob.download_as_bytes()
+                image = Image.open(io.BytesIO(image_bytes))
+                logger.info(f"Found swatch: {swatch_path}")
+                return image, swatch_path
+        except Exception as e:
+            logger.debug(f"Error checking swatch in {swatch_path}: {str(e)}")
+            continue
+    
+    logger.warning(f"Swatch not found for prefix: {swatch_name_prefix}")
+    return None, None
+
 def check_blob_exists(blob_path: str) -> bool:
     """
     Check if a blob exists in the bucket
