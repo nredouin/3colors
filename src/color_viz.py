@@ -103,7 +103,7 @@ def create_color_bars(df: pd.DataFrame) -> go.Figure:
         font=dict(family="Arial", size=12),
         plot_bgcolor='white',
         paper_bgcolor='white',
-        bargap=0.0001,  # Thick bars as requested
+        bargap=0.00001,  # Thick bars as requested
         bargroupgap=0.00001,
         margin=dict(l=20, r=20, t=20, b=20)
     )

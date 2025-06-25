@@ -394,6 +394,7 @@ def get_mapping_info() -> dict:
         # Find the correct column names
         resp_col = None
         cat_col = None
+        a1r_col = None
         
         for col in ['RESP_FINAL', 'Respondent ID', 'respondent_id', 'filename', 'id']:
             if col in category_df.columns:
@@ -404,14 +405,101 @@ def get_mapping_info() -> dict:
             if col in category_df.columns:
                 cat_col = col
                 break
+                
+        for col in ['A1R', 'a1r', 'A1r', 'skin_tone_cluster']:
+            if col in category_df.columns:
+                a1r_col = col
+                break
         
         if resp_col and cat_col:
             info['hair_category']['sample_entries'] = [
                 {
                     'respondent_id': row[resp_col],
-                    'category': row[cat_col]
+                    'category': row[cat_col],
+                    'skin_tone_cluster': row.get(a1r_col, 'N/A') if a1r_col else 'N/A'
                 }
                 for _, row in category_df.head(3).iterrows()
             ]
     
     return info
+
+
+def get_respondent_info(respondent_id: str) -> dict:
+    """
+    Get comprehensive information for a given respondent ID including hair tone and skin tone cluster
+    
+    Args:
+        respondent_id (str): The respondent ID to look up
+        
+    Returns:
+        dict: Dictionary with hair_tone, skin_tone_cluster, and found status
+    """
+    category_df = load_hair_category()
+    
+    result = {
+        'hair_tone': None,
+        'skin_tone_cluster': None,
+        'found': False
+    }
+    
+    if category_df.empty:
+        logger.warning("Hair category mapping not available")
+        return result
+    
+    # Try different column names for respondent ID
+    possible_id_columns = ['RESP_FINAL', 'Respondent ID', 'respondent_id', 'filename', 'id']
+    # Try different column names for category (hair tone)
+    possible_category_columns = ['CATEGORY', 'Category', 'category']
+    # Try different column names for A1R (skin tone cluster)
+    possible_a1r_columns = ['A1R', 'a1r', 'A1r', 'skin_tone_cluster']
+    
+    respondent_id_str = str(respondent_id).strip()
+    
+    for id_col in possible_id_columns:
+        if id_col in category_df.columns:
+            # Try exact match
+            matching_rows = category_df[category_df[id_col].astype(str).str.strip() == respondent_id_str]
+            
+            if not matching_rows.empty:
+                row = matching_rows.iloc[0]
+                result['found'] = True
+                
+                # Get hair tone (category)
+                for cat_col in possible_category_columns:
+                    if cat_col in row and pd.notna(row[cat_col]):
+                        result['hair_tone'] = str(row[cat_col]).strip().title()
+                        break
+                
+                # Get skin tone cluster (A1R)
+                for a1r_col in possible_a1r_columns:
+                    if a1r_col in row and pd.notna(row[a1r_col]):
+                        result['skin_tone_cluster'] = str(row[a1r_col]).strip()
+                        break
+                
+                logger.info(f"Found info for respondent {respondent_id}: Hair Tone={result['hair_tone']}, Skin Tone Cluster={result['skin_tone_cluster']}")
+                return result
+            
+            # Try partial match (if respondent_id is part of filename)
+            partial_matches = category_df[category_df[id_col].astype(str).str.contains(respondent_id_str, na=False)]
+            
+            if not partial_matches.empty:
+                row = partial_matches.iloc[0]
+                result['found'] = True
+                
+                # Get hair tone (category)
+                for cat_col in possible_category_columns:
+                    if cat_col in row and pd.notna(row[cat_col]):
+                        result['hair_tone'] = str(row[cat_col]).strip().title()
+                        break
+                
+                # Get skin tone cluster (A1R)
+                for a1r_col in possible_a1r_columns:
+                    if a1r_col in row and pd.notna(row[a1r_col]):
+                        result['skin_tone_cluster'] = str(row[a1r_col]).strip()
+                        break
+                
+                logger.info(f"Found info for respondent {respondent_id} (partial match): Hair Tone={result['hair_tone']}, Skin Tone Cluster={result['skin_tone_cluster']}")
+                return result
+    
+    logger.warning(f"No information found for respondent ID: {respondent_id}")
+    return result

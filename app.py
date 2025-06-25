@@ -13,7 +13,7 @@ from src.color_viz import create_color_bars
 from src.color_processing import process_hair_color_remapping_with_sample, get_sample_info
 from src.swatch_loader import (
     load_swatch_for_respondent_and_shade, extract_shade_id_from_data, 
-    get_mapping_info, reload_mappings
+    get_mapping_info, reload_mappings, get_respondent_info  # Add this import
 )
 from config.settings import logger, CITY_FOLDERS
 
@@ -155,8 +155,9 @@ if respondent_id and selected_shade:
         # Get sample information for selection
         samples_info = get_sample_info(df)
         
+        respondent_info = get_respondent_info(respondent_id)
         # Display main metrics
-        col_info1, col_info2, col_info3, col_info4 = st.columns(4)
+        col_info1, col_info2, col_info3, col_info4, col_info5, col_info6 = st.columns(6)
         
         with col_info1:
             st.metric("Respondent ID", respondent_id)
@@ -167,6 +168,12 @@ if respondent_id and selected_shade:
         with col_info4:
             city_name = CITY_FOLDERS[int(respondent_id[0])].replace("mcb_hair_bucket_", "").title()
             st.metric("City", city_name)
+        with col_info5:
+            hair_tone = respondent_info['hair_tone'] if respondent_info['hair_tone'] else "Unknown"
+            st.metric("Hair Tone", hair_tone)
+        with col_info6:
+            skin_tone = respondent_info['skin_tone_cluster'] if respondent_info['skin_tone_cluster'] else "Unknown"
+            st.metric("Skin Tone Cluster", skin_tone)
         
         st.divider()
         
