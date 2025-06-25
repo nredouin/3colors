@@ -99,13 +99,13 @@ def create_color_bars(df: pd.DataFrame) -> go.Figure:
         xaxis_title="Proportion ",
         yaxis_title="Samples",
         barmode='stack',
-        height=1000,
+        height=700,
         font=dict(family="Arial", size=12),
         plot_bgcolor='white',
         paper_bgcolor='white',
-        bargap=0.1,  # Thick bars as requested
-        bargroupgap=0.01,
-        margin=dict(l=80, r=80, t=80, b=80)
+        bargap=0.0001,  # Thick bars as requested
+        bargroupgap=0.00001,
+        margin=dict(l=20, r=20, t=20, b=20)
     )
     
     # Add grid

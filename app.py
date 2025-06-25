@@ -224,7 +224,7 @@ if respondent_id and selected_shade:
         st.divider()
         
         # Main content in 3 columns
-        col1, col2, col3 = st.columns([1, 1, 1])
+        col1, col2, col3 = st.columns([1, 1.5, 1])
         
         with col1:
             st.subheader("Original Image")
