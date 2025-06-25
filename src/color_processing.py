@@ -20,38 +20,38 @@ def lab_to_rgb(lab_values):
     
     return rgb_255
 
-def select_balanced_samples(df: pd.DataFrame, n_clusters: int = 3) -> pd.DataFrame:
+def get_sample_info(df: pd.DataFrame) -> list:
     """
-    Select samples with proportions closest to being balanced (33% each)
+    Get information about all samples for selection
     
     Args:
         df (pd.DataFrame): Color data DataFrame
-        n_clusters (int): Number of color clusters
         
     Returns:
-        pd.DataFrame: Selected sample row
+        list: List of sample information dictionaries
     """
-    if df.empty:
-        return df
-    
-    target_proportion = 100.0 / n_clusters  # ~33.33%
-    best_row = None
-    best_score = float('inf')
+    samples_info = []
     
     for idx, row in df.iterrows():
-        # Calculate how far each proportion is from the target
-        proportions = [row[f'proportion_{i+1}'] for i in range(n_clusters)]
-        score = sum(abs(prop - target_proportion) for prop in proportions)
+        # Calculate balance score (how far from 33.33% each)
+        proportions = [row[f'proportion_{i+1}'] for i in range(3)]
+        target_proportion = 100.0 / 3  # 33.33%
+        balance_score = sum(abs(prop - target_proportion) for prop in proportions)
         
-        if score < best_score:
-            best_score = score
-            best_row = row
+        # Get filename
+        filename = row.get('filename', f'Sample {idx+1}')
+        
+        sample_info = {
+            'index': idx,
+            'filename': filename,
+            'proportions': proportions,
+            'balance_score': balance_score,
+            'display_name': f"Sample {idx+1}: {filename}" if filename != f'Sample {idx+1}' else f"Sample {idx+1}"
+        }
+        
+        samples_info.append(sample_info)
     
-    if best_row is not None:
-        proportions = [best_row[f'proportion_{i+1}'] for i in range(n_clusters)]
-        logger.info(f"Selected sample with balance score: {best_score:.2f}, proportions: {proportions}")
-    
-    return best_row
+    return samples_info
 
 def find_closest_color(pixel_rgb, cluster_centers):
     """
@@ -140,14 +140,15 @@ def remap_hair_colors(image: Image.Image, mask: Image.Image, color_data: pd.Seri
         logger.error(f"Error in color remapping: {str(e)}")
         return image
 
-def process_hair_color_remapping(image: Image.Image, mask: Image.Image, df: pd.DataFrame) -> Image.Image:
+def process_hair_color_remapping_with_sample(image: Image.Image, mask: Image.Image, df: pd.DataFrame, sample_index: int) -> Image.Image:
     """
-    Process hair color remapping with the most balanced color sample
+    Process hair color remapping with a specific selected sample
     
     Args:
         image (PIL.Image): Original hair image
         mask (PIL.Image): Hair mask
         df (pd.DataFrame): Color data DataFrame
+        sample_index (int): Index of the sample to use for remapping
         
     Returns:
         PIL.Image: Remapped image
@@ -156,15 +157,18 @@ def process_hair_color_remapping(image: Image.Image, mask: Image.Image, df: pd.D
         logger.warning("Missing data for color remapping")
         return image
     
-    # Select the most balanced sample (closest to 33% each)
-    selected_sample = select_balanced_samples(df, n_clusters=3)
-    
-    if selected_sample is None:
-        logger.warning("No suitable sample found for remapping")
+    if sample_index >= len(df) or sample_index < 0:
+        logger.error(f"Invalid sample index {sample_index}. DataFrame has {len(df)} rows.")
         return image
     
+    # Get the selected sample
+    selected_sample = df.iloc[sample_index]
+    
     # Log selected sample info
-    logger.info(f"Selected sample: {selected_sample['filename'] if 'filename' in selected_sample else 'Unknown'}")
+    filename = selected_sample.get('filename', f'Sample {sample_index+1}')
+    proportions = [selected_sample[f'proportion_{i+1}'] for i in range(3)]
+    logger.info(f"Using selected sample {sample_index+1}: {filename}")
+    logger.info(f"Color proportions: {proportions}")
     
     # Perform color remapping
     remapped_image = remap_hair_colors(image, mask, selected_sample, n_clusters=3)

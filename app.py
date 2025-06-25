@@ -10,10 +10,10 @@ from src.data_loader import (
     build_image_path, build_mask_path
 )
 from src.color_viz import create_color_bars
-from src.color_processing import process_hair_color_remapping
+from src.color_processing import process_hair_color_remapping_with_sample, get_sample_info
 from src.swatch_loader import (
-    load_swatch_for_shade, extract_shade_id_from_data, 
-    get_mapping_info, reload_shades_mapping
+    load_swatch_for_respondent_and_shade, extract_shade_id_from_data, 
+    get_mapping_info, reload_mappings
 )
 from config.settings import logger, CITY_FOLDERS
 
@@ -55,6 +55,12 @@ st.markdown("""
         padding: 15px;
         background-color: #f0f4ff;
         margin-top: 1rem;
+    }
+    .sample-info {
+        background-color: #f8f9fa;
+        padding: 10px;
+        border-radius: 5px;
+        margin: 5px 0;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -107,20 +113,35 @@ with st.sidebar:
     # Debug section for mapping
     st.divider()
     st.subheader("Debug Info")
-    if st.button("Check Mapping File"):
+    if st.button("Check Mapping Files"):
         mapping_info = get_mapping_info()
-        if mapping_info['file_exists']:
-            st.success(f"✅ Mapping file found ({mapping_info['total_entries']} entries)")
-            if mapping_info['sample_entries']:
-                st.write("Sample entries:")
-                for entry in mapping_info['sample_entries']:
-                    st.write(f"• {entry['id']} → {entry['name']}")
+        
+        # Shades mapping info
+        shades_info = mapping_info['shades_mapping']
+        if shades_info['file_exists']:
+            st.success(f"✅ Shades mapping: {shades_info['total_entries']} entries")
+            if shades_info['sample_entries']:
+                st.write("Sample shades:")
+                for entry in shades_info['sample_entries']:
+                    st.write(f"• {entry['name'][:30]}...")
+                    st.write(f"  L:{entry['light']} M:{entry['medium']} D:{entry['dark']}")
         else:
-            st.error(f"❌ Mapping file not found at: {mapping_info['file_path']}")
+            st.error(f"❌ Shades mapping not found")
+        
+        # Hair category info
+        category_info = mapping_info['hair_category']
+        if category_info['file_exists']:
+            st.success(f"✅ Hair category: {category_info['total_entries']} entries")
+            if category_info['sample_entries']:
+                st.write("Sample categories:")
+                for entry in category_info['sample_entries']:
+                    st.write(f"• {entry['respondent_id']} → {entry['category']}")
+        else:
+            st.error(f"❌ Hair category not found")
     
-    if st.button("Reload Mapping"):
-        reload_shades_mapping()
-        st.success("Mapping reloaded!")
+    if st.button("Reload Mappings"):
+        shades_count, category_count = reload_mappings()
+        st.success(f"Mappings reloaded! Shades: {shades_count}, Categories: {category_count}")
 
 # Main content
 if respondent_id and selected_shade:
@@ -131,6 +152,9 @@ if respondent_id and selected_shade:
         mask = load_respondent_mask(respondent_id, selected_shade)
     
     if not df.empty:
+        # Get sample information for selection
+        samples_info = get_sample_info(df)
+        
         # Display main metrics
         col_info1, col_info2, col_info3, col_info4 = st.columns(4)
         
@@ -143,6 +167,59 @@ if respondent_id and selected_shade:
         with col_info4:
             city_name = CITY_FOLDERS[int(respondent_id[0])].replace("mcb_hair_bucket_", "").title()
             st.metric("City", city_name)
+        
+        st.divider()
+        
+        # Sample selection section
+        st.subheader("🎨 Choose Sample for Color Remapping")
+        
+        # Create options for selectbox with detailed info
+        sample_options = []
+        for i, sample in enumerate(samples_info):
+            proportions_str = f"{sample['proportions'][0]:.1f}% | {sample['proportions'][1]:.1f}% | {sample['proportions'][2]:.1f}%"
+            option_text = f"Sample {i+1}: {proportions_str} (Score: {sample['balance_score']:.1f})"
+            sample_options.append(option_text)
+        
+        col_select1, col_select2 = st.columns([2, 1])
+        
+        with col_select1:
+            selected_sample_index = st.selectbox(
+                "Select which sample to use for color remapping:",
+                options=range(len(samples_info)),
+                format_func=lambda x: sample_options[x],
+                help="Choose the sample with color proportions you prefer for remapping"
+            )
+        
+        with col_select2:
+            if st.button("🔄 Use Best Balanced", help="Select the most balanced sample (closest to 33% each)"):
+                # Find the sample with the lowest balance score
+                best_sample = min(samples_info, key=lambda x: x['balance_score'])
+                selected_sample_index = best_sample['index']
+                st.rerun()
+        
+        # Show selected sample details
+        if selected_sample_index is not None:
+            selected_sample = samples_info[selected_sample_index]
+            
+            st.markdown('<div class="sample-info">', unsafe_allow_html=True)
+            col_detail1, col_detail2, col_detail3 = st.columns(3)
+            
+            with col_detail1:
+                st.write(f"**Selected:** Sample {selected_sample_index + 1}")
+                st.write(f"**File:** {selected_sample['filename']}")
+            
+            with col_detail2:
+                proportions = selected_sample['proportions']
+                st.write(f"**Color 1:** {proportions[0]:.1f}%")
+                st.write(f"**Color 2:** {proportions[1]:.1f}%")
+                st.write(f"**Color 3:** {proportions[2]:.1f}%")
+            
+            with col_detail3:
+                st.write(f"**Balance Score:** {selected_sample['balance_score']:.1f}")
+                balance_quality = "Excellent" if selected_sample['balance_score'] < 10 else "Good" if selected_sample['balance_score'] < 20 else "Fair"
+                st.write(f"**Quality:** {balance_quality}")
+            
+            st.markdown('</div>', unsafe_allow_html=True)
         
         st.divider()
         
@@ -178,27 +255,31 @@ if respondent_id and selected_shade:
             
             # Show sample files
             if 'filename' in df.columns:
-                with st.expander("Sample Files"):
-                    for idx, filename in enumerate(df['filename'].head(5)):
-                        st.write(f"**Sample {idx+1}:** {filename}")
+                with st.expander("All Sample Files"):
+                    for idx, filename in enumerate(df['filename']):
+                        is_selected = idx == selected_sample_index
+                        status = "🎯 SELECTED" if is_selected else ""
+                        st.write(f"**Sample {idx+1}:** {filename} {status}")
         
         with col3:
             st.subheader("Remapped Colors")
             
-            if image and mask:
-                with st.spinner("Processing color remapping..."):
+            if image and mask and selected_sample_index is not None:
+                with st.spinner(f"Processing color remapping with Sample {selected_sample_index + 1}..."):
                     try:
-                        remapped_image = process_hair_color_remapping(image, mask, df)
+                        remapped_image = process_hair_color_remapping_with_sample(
+                            image, mask, df, selected_sample_index
+                        )
                         
                         st.markdown('<div class="remapped-container">', unsafe_allow_html=True)
                         st.image(
                             remapped_image,
-                            caption=f"Remapped - 3 Colors - {selected_shade}",
+                            caption=f"Remapped - Sample {selected_sample_index + 1} - {selected_shade}",
                             use_column_width=True
                         )
                         st.markdown('</div>', unsafe_allow_html=True)
                         
-                        st.success("✨ Color remapping completed!")
+                        st.success(f"✨ Remapped with Sample {selected_sample_index + 1}!")
                         
                     except Exception as e:
                         st.error(f"Error in color remapping: {str(e)}")
@@ -207,12 +288,20 @@ if respondent_id and selected_shade:
                 st.error("Mask not found")
                 expected_mask_path = build_mask_path(respondent_id, selected_shade)
                 st.code(expected_mask_path, language="text")
-            else:
+            elif not image:
                 st.warning("Original image required for remapping")
+            else:
+                st.info("Select a sample above to see remapped result")
         
         # Detailed data table and swatch (full width)
         with st.expander("View Detailed Color Data"):
-            st.dataframe(df, use_container_width=True)
+            # Highlight selected sample in dataframe
+            styled_df = df.copy()
+            if selected_sample_index is not None:
+                # Add a column to show which sample is selected
+                styled_df['Selected'] = ['🎯 YES' if i == selected_sample_index else '' for i in range(len(styled_df))]
+            
+            st.dataframe(styled_df, use_container_width=True)
             
             # Load and display swatch
             st.subheader("Color Swatch Reference")
@@ -222,9 +311,10 @@ if respondent_id and selected_shade:
                 shade_id = extract_shade_id_from_data(df)
                 
                 if shade_id:
-                    st.info(f"Looking for swatch with shade ID: **{shade_id}**")
+                    st.info(f"Looking for swatch - Respondent: **{respondent_id}**, Shade ID: **{shade_id}**")
                     
-                    swatch_image, swatch_info = load_swatch_for_shade(shade_id)
+                    # Use the new two-step mapping process
+                    swatch_image, swatch_info = load_swatch_for_respondent_and_shade(respondent_id, shade_id)
                     
                     if swatch_image and swatch_info:
                         col_swatch1, col_swatch2 = st.columns([1, 2])
@@ -241,13 +331,14 @@ if respondent_id and selected_shade:
                         with col_swatch2:
                             st.write("**Swatch Information:**")
                             st.write(f"**Name:** {swatch_info['name']}")
+                            st.write(f"**Category:** {swatch_info['mapping_category'].title()}")
                             st.write(f"**Filename:** {swatch_info['filename']}")
-                            st.write(f"**Category:** {swatch_info['folder'].title()}")
+                            st.write(f"**Folder:** {swatch_info['folder']}")
                             st.write(f"**Path:** `{swatch_info['path']}`")
                             
                     else:
-                        st.warning(f"No swatch found for shade ID: {shade_id}")
-                        st.info("Searched in folders: dark → medium → light")
+                        st.warning(f"No swatch found for Respondent {respondent_id}, Shade ID: {shade_id}")
+                        st.info("Check the mapping files in Debug Info section")
                 else:
                     st.warning("Could not extract shade ID from data for swatch lookup")
                     st.info("Available columns in data:")

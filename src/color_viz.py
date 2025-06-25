@@ -82,10 +82,10 @@ def create_color_bars(df: pd.DataFrame) -> go.Figure:
                 y=[y_pos],
                 orientation='h',
                 marker_color=color_info['color'],
-                text=f"{color_info['proportion']:.1f}%",
+                text=f"{color_info['proportion']:.2f}",
                 textposition='inside',
                 hovertemplate=f"<b>Color {i+1}</b><br>" +
-                             f"Proportion: {color_info['proportion']:.1f}%<br>" +
+                             f"Proportion: {color_info['proportion']:.2f}<br>" +
                              f"LAB: {color_info['lab']}<br>" +
                              "<extra></extra>",
                 showlegend=(idx == 0),  # Only show legend for first row
@@ -96,15 +96,15 @@ def create_color_bars(df: pd.DataFrame) -> go.Figure:
     
     fig.update_layout(
         title="Hair Color Distribution",
-        xaxis_title="Proportion (%)",
+        xaxis_title="Proportion ",
         yaxis_title="Samples",
         barmode='stack',
-        height=800,
+        height=1000,
         font=dict(family="Arial", size=12),
         plot_bgcolor='white',
         paper_bgcolor='white',
         bargap=0.1,  # Thick bars as requested
-        bargroupgap=0.05,
+        bargroupgap=0.01,
         margin=dict(l=80, r=80, t=80, b=80)
     )
     
